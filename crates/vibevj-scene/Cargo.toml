@@ -1,0 +1,15 @@
+[package]
+name = "vibevj-scene"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+vibevj-common = { path = "../vibevj-common" }
+
+glam = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+anyhow = { workspace = true }

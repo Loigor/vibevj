@@ -1,0 +1,92 @@
+[workspace]
+members = [
+    "crates/vibevj-engine",
+    "crates/vibevj-gui",
+    "crates/vibevj-audio",
+    "crates/vibevj-scene",
+    "crates/vibevj-scripting",
+    "crates/vibevj-common",
+]
+resolver = "2"
+
+[package]
+name = "vibevj"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "vibevj"
+path = "src/main.rs"
+
+[dependencies]
+vibevj-common = { path = "crates/vibevj-common" }
+vibevj-engine = { path = "crates/vibevj-engine" }
+vibevj-gui = { path = "crates/vibevj-gui" }
+vibevj-audio = { path = "crates/vibevj-audio" }
+vibevj-scene = { path = "crates/vibevj-scene" }
+vibevj-scripting = { path = "crates/vibevj-scripting" }
+
+wgpu = { workspace = true }
+egui = { workspace = true }
+egui-wgpu = { workspace = true }
+egui-winit = { workspace = true }
+winit = { workspace = true }
+pollster = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+anyhow = { workspace = true }
+glam = { workspace = true }
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["VibeVJ Contributors"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/vibevj/vibevj"
+
+[workspace.dependencies]
+# Core dependencies
+wgpu = "0.19"
+egui = "0.27"
+egui-wgpu = "0.27"
+egui-winit = "0.27"
+winit = "0.29"
+pollster = "0.3"
+bytemuck = { version = "1.14", features = ["derive"] }
+
+# Math and utilities
+glam = { version = "0.27", features = ["serde"] }
+nalgebra = "0.32"
+
+# Audio processing
+cpal = "0.15"
+rustfft = "6.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Scripting
+rhai = "1.17"
+
+# Logging and error handling
+log = "0.4"
+env_logger = "0.11"
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Async runtime
+tokio = { version = "1.36", features = ["full"] }
+
+# Image and media
+image = "0.24"
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+lto = true
+codegen-units = 1
