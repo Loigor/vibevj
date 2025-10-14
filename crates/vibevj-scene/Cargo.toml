@@ -7,9 +7,12 @@ license.workspace = true
 
 [dependencies]
 vibevj-common = { path = "../vibevj-common" }
+vibevj-engine = { path = "../vibevj-engine" }
 
 glam = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
 anyhow = { workspace = true }
+wgpu = { workspace = true }
+bytemuck = { workspace = true }

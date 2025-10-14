@@ -1,5 +1,4 @@
 use glam::{Mat4, Vec3};
-use vibevj_common::Transform;
 
 /// Camera for 3D rendering
 pub struct Camera {
@@ -54,5 +53,30 @@ impl Default for Camera {
             Vec3::ZERO,
             16.0 / 9.0,
         )
+    }
+}
+
+/// Camera uniform data for GPU
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct CameraUniform {
+    pub view_proj: [[f32; 4]; 4],
+}
+
+impl CameraUniform {
+    pub fn new() -> Self {
+        Self {
+            view_proj: Mat4::IDENTITY.to_cols_array_2d(),
+        }
+    }
+    
+    pub fn update_view_proj(&mut self, camera: &Camera) {
+        self.view_proj = camera.view_projection_matrix().to_cols_array_2d();
+    }
+}
+
+impl Default for CameraUniform {
+    fn default() -> Self {
+        Self::new()
     }
 }

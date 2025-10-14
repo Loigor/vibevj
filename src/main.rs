@@ -1,4 +1,5 @@
 mod app;
+mod preview_window;
 
 use app::VibeVJApp;
 use anyhow::Result;

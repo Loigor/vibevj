@@ -92,6 +92,7 @@ impl Default for LeftPanel {
 pub struct CenterPanel {
     current_content: PanelContent,
     scene_editor: SceneEditor,
+    render_texture: Option<egui::TextureId>,
 }
 
 impl CenterPanel {
@@ -99,11 +100,17 @@ impl CenterPanel {
         Self {
             current_content: PanelContent::Preview,
             scene_editor: SceneEditor::new(),
+            render_texture: None,
         }
     }
 
     pub fn update(&mut self, _time: &TimeInfo) {
         // Update based on current content
+    }
+    
+    /// Set the render texture to display in preview
+    pub fn set_render_texture(&mut self, texture_id: Option<egui::TextureId>) {
+        self.render_texture = texture_id;
     }
 
     pub fn ui(&mut self, ui: &mut Ui) {
@@ -126,11 +133,25 @@ impl CenterPanel {
 
     fn render_preview(&self, ui: &mut Ui) {
         ui.heading("Main Preview");
-        ui.group(|ui| {
-            ui.set_min_size(egui::vec2(ui.available_width(), 400.0));
-            ui.centered_and_justified(|ui| {
-                ui.label("🖼 Full Scene Preview");
-            });
+        
+        egui::ScrollArea::both().show(ui, |ui| {
+            if let Some(texture_id) = self.render_texture {
+                // Display the 3D render texture
+                let available_size = ui.available_size();
+                let aspect_ratio = 1280.0 / 720.0; // Match render target aspect
+                let height = available_size.x / aspect_ratio;
+                let size = egui::vec2(available_size.x, height.min(available_size.y));
+                
+                ui.image(egui::load::SizedTexture::new(texture_id, size));
+            } else {
+                // Fallback if no texture
+                ui.group(|ui| {
+                    ui.set_min_size(egui::vec2(ui.available_width(), 400.0));
+                    ui.centered_and_justified(|ui| {
+                        ui.label("🖼 Waiting for render...");
+                    });
+                });
+            }
         });
     }
 

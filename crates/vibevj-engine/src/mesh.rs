@@ -1,4 +1,3 @@
-use glam::Vec3;
 use bytemuck::{Pod, Zeroable};
 
 /// Vertex representation for 3D meshes
@@ -56,6 +55,7 @@ impl Vertex {
 }
 
 /// 3D Mesh with vertices and indices
+#[derive(Debug)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,

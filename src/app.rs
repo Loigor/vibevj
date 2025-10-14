@@ -8,11 +8,13 @@ use winit::{
 };
 
 use vibevj_common::TimeInfo;
-use vibevj_engine::Renderer;
+use vibevj_engine::{Renderer, RenderObject, Material, mesh_gen, Camera, RenderTarget};
 use vibevj_gui::GuiApp;
 use vibevj_audio::{AudioInput, AudioAnalyzer, FrequencyBands};
-use vibevj_scene::Scene;
+use vibevj_scene::{Scene, SceneRenderer};
 use vibevj_scripting::ScriptEngine;
+use glam::{Mat4, Vec3};
+use crate::preview_window::PreviewWindow;
 
 /// Main VibeVJ application
 pub struct VibeVJApp {
@@ -20,6 +22,17 @@ pub struct VibeVJApp {
     renderer: Option<Renderer>,
     gui: Option<GuiApp>,
     egui_state: Option<egui_winit::State>,
+    wgpu_instance: wgpu::Instance,
+    
+    // 3D rendering
+    scene_renderer: Option<SceneRenderer>,
+    render_objects: Vec<RenderObject>,
+    render_target: Option<RenderTarget>,
+    
+    // Preview window
+    preview_window: Option<PreviewWindow>,
+    preview_render_target: Option<RenderTarget>,
+    show_preview_window: bool,
     
     // Application state
     scene: Scene,
@@ -39,11 +52,26 @@ pub struct VibeVJApp {
 impl VibeVJApp {
     /// Create a new VibeVJ application
     pub fn new() -> Result<Self> {
+        // Create WGPU instance once for the entire application
+        let wgpu_instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::all(),
+            ..Default::default()
+        });
+        
         Ok(Self {
             window: None,
             renderer: None,
             gui: None,
             egui_state: None,
+            wgpu_instance,
+            
+            scene_renderer: None,
+            render_objects: Vec::new(),
+            render_target: None,
+            
+            preview_window: None,
+            preview_render_target: None,
+            show_preview_window: false,
             
             scene: Scene::new("Main Scene".to_string()),
             audio_input: AudioInput::default(),
@@ -92,6 +120,60 @@ impl VibeVJApp {
             );
         }
 
+        // Create 3D scene renderer
+        let camera = Camera::new(
+            Vec3::new(3.0, 2.0, 5.0),
+            Vec3::ZERO,
+            renderer.aspect_ratio(),
+        );
+        let scene_renderer = SceneRenderer::new(&renderer.device, surface_format, camera);
+        
+        // Create render target for the 3D scene
+        let render_target = RenderTarget::new(
+            &renderer.device,
+            1280,  // Default render size
+            720,
+            surface_format,
+            Some("Scene Render Target"),
+        );
+        
+        // Create some test objects
+        let mut cube = RenderObject::new(
+            mesh_gen::create_cube(1.0),
+            Material::unlit(vibevj_common::Color::new(1.0, 0.5, 0.2, 1.0)),
+            Mat4::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+        );
+        cube.upload(
+            &renderer.device,
+            scene_renderer.material_bind_group_layout(),
+            scene_renderer.model_bind_group_layout(),
+        );
+        
+        let mut sphere = RenderObject::new(
+            mesh_gen::create_sphere(0.8, 32, 16),
+            Material::unlit(vibevj_common::Color::new(0.2, 0.5, 1.0, 1.0)),
+            Mat4::from_translation(Vec3::new(-2.5, 0.0, 0.0)),
+        );
+        sphere.upload(
+            &renderer.device,
+            scene_renderer.material_bind_group_layout(),
+            scene_renderer.model_bind_group_layout(),
+        );
+        
+        self.render_objects = vec![cube, sphere];
+        self.scene_renderer = Some(scene_renderer);
+        
+        // Register render target texture with egui
+        let texture_id = gui.register_render_texture(
+            &renderer.device,
+            &renderer.queue,
+            &render_target.texture,
+            [render_target.width, render_target.height],
+        );
+        log::info!("Registered render texture with ID: {:?}", texture_id);
+        
+        self.render_target = Some(render_target);
+
         self.renderer = Some(renderer);
         self.gui = Some(gui);
         self.egui_state = Some(egui_state);
@@ -129,6 +211,42 @@ impl VibeVJApp {
         // Update GUI
         if let Some(gui) = &mut self.gui {
             gui.update(&time_info);
+            
+            // Check if preview window toggle state has changed
+            let should_show = gui.should_show_preview_window();
+            if should_show != self.show_preview_window {
+                self.show_preview_window = should_show;
+                if !should_show {
+                    // Close preview window
+                    self.preview_window = None;
+                    log::info!("Preview window closed");
+                }
+                // Note: Preview window creation is handled in the event loop
+                // because we need access to the EventLoopWindowTarget
+            }
+        }
+        
+        // Preview window texture will be updated in render() method
+        
+        // Update 3D objects - rotate them
+        if let Some(renderer) = &self.renderer {
+            let rotation_speed = 1.0;
+            let angle = elapsed as f32 * rotation_speed;
+            
+            // Rotate cube around Y axis
+            if !self.render_objects.is_empty() {
+                let transform = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.0))
+                    * Mat4::from_rotation_y(angle)
+                    * Mat4::from_rotation_x(angle * 0.5);
+                self.render_objects[0].update_transform(&renderer.queue, transform);
+            }
+            
+            // Rotate sphere around its own axis
+            if self.render_objects.len() > 1 {
+                let transform = Mat4::from_translation(Vec3::new(-2.5, 0.0, 0.0))
+                    * Mat4::from_rotation_z(angle * 1.5);
+                self.render_objects[1].update_transform(&renderer.queue, transform);
+            }
         }
 
         self.last_frame_time = now;
@@ -188,10 +306,36 @@ impl VibeVJApp {
             &screen_descriptor,
         );
 
-        // Render scene and egui
+        // Render 3D scene to main render target
+        if let (Some(scene_renderer), Some(render_target)) = (&mut self.scene_renderer, &self.render_target) {
+            // Update camera
+            scene_renderer.update_camera(&renderer.queue);
+            
+            // Render 3D objects to render target
+            let object_refs: Vec<&RenderObject> = self.render_objects.iter().collect();
+            scene_renderer.render(
+                &mut encoder,
+                &render_target.view,
+                &render_target.depth_view,
+                &object_refs,
+                wgpu::Color {
+                    r: 0.1,
+                    g: 0.1,
+                    b: 0.1,
+                    a: 1.0,
+                },
+            );
+        }
+        
+        // Update preview window's bind group by copying texture from main render target
+        if let (Some(preview_window), Some(render_target)) = (&mut self.preview_window, &self.render_target) {
+            preview_window.set_render_target(render_target, &renderer.device, &renderer.queue);
+        }
+
+        // Render GUI to window
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Main Render Pass"),
+                label: Some("GUI Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
@@ -255,6 +399,46 @@ impl VibeVJApp {
                     }
                 }
                 Event::WindowEvent { event, window_id } => {
+                    // Check if this is the preview window
+                    let is_preview_window = self.preview_window.as_ref()
+                        .map(|pw| pw.window.id() == window_id)
+                        .unwrap_or(false);
+                    
+                    if is_preview_window {
+                        // Handle preview window events
+                        if let Some(preview_window) = &self.preview_window {
+                            // Handle input (fullscreen toggle)
+                            preview_window.handle_input(&event);
+                            
+                            match event {
+                                WindowEvent::CloseRequested => {
+                                    // Close preview window but keep main app running
+                                    self.preview_window = None;
+                                    self.show_preview_window = false;
+                                    if let Some(gui) = &mut self.gui {
+                                        gui.set_show_preview_window(false);
+                                    }
+                                    log::info!("Preview window closed by user");
+                                }
+                                WindowEvent::Resized(physical_size) => {
+                                    if let Some(pw) = &mut self.preview_window {
+                                        pw.resize(physical_size);
+                                    }
+                                }
+                                WindowEvent::RedrawRequested => {
+                                    if let Some(pw) = &self.preview_window {
+                                        if let Err(e) = pw.render() {
+                                            log::error!("Preview window render error: {}", e);
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        return;
+                    }
+                    
+                    // Handle main window events
                     // Handle egui events
                     if let Some(egui_state) = &mut self.egui_state {
                         if let Some(window) = &self.window {
@@ -293,8 +477,33 @@ impl VibeVJApp {
                     }
                 }
                 Event::AboutToWait => {
+                    // Create preview window if needed
+                    if self.show_preview_window && self.preview_window.is_none() && self.renderer.is_some() {
+                        let renderer = self.renderer.as_ref().unwrap();
+                        let instance = &self.wgpu_instance;
+                        pollster::block_on(async {
+                            match PreviewWindow::new(elwt, &renderer.device, instance).await {
+                                Ok(pw) => {
+                                    log::info!("Preview window created successfully");
+                                    self.preview_window = Some(pw);
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to create preview window: {}", e);
+                                    self.show_preview_window = false;
+                                    if let Some(gui) = &mut self.gui {
+                                        gui.set_show_preview_window(false);
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    
+                    // Request redraws
                     if let Some(window) = &self.window {
                         window.request_redraw();
+                    }
+                    if let Some(preview_window) = &self.preview_window {
+                        preview_window.window.request_redraw();
                     }
                 }
                 _ => {}
