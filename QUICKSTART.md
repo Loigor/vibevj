@@ -45,7 +45,7 @@ When you first launch VibeVJ, you'll see a three-panel interface:
 ### Center Panel (60%)
 - **Preview Tab**: Full-screen visualization preview
 - **Scene Editor Tab**: Node-based visual programming
-- **Timeline Tab**: Animation timeline (coming soon)
+- **Sequencer Tab**: scene sequencer (coming soon)
 
 ### Right Panel (15%)
 - **Resources**: Browser for prefabs, shaders, textures

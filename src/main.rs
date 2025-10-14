@@ -1,5 +1,6 @@
 mod app;
 mod preview_window;
+mod scene_state;
 
 use app::VibeVJApp;
 use anyhow::Result;

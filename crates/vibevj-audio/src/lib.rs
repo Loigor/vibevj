@@ -12,5 +12,5 @@ pub mod input;
 pub mod frequency;
 
 pub use analyzer::AudioAnalyzer;
-pub use input::AudioInput;
+pub use input::{AudioInput, AudioDeviceInfo};
 pub use frequency::{FrequencyBands, FrequencyData};

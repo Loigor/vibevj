@@ -107,6 +107,7 @@ impl SceneRenderer {
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &[vibevj_engine::Vertex::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -116,6 +117,7 @@ impl SceneRenderer {
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,

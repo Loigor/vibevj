@@ -2,11 +2,19 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use vibevj_common::{Result, VibeVJError};
 use std::sync::{Arc, Mutex};
 
+/// Audio device information
+#[derive(Debug, Clone)]
+pub struct AudioDeviceInfo {
+    pub name: String,
+    pub is_default: bool,
+}
+
 /// Audio input handler
 pub struct AudioInput {
     stream: Option<cpal::Stream>,
     sample_buffer: Arc<Mutex<Vec<f32>>>,
     sample_rate: u32,
+    current_device_name: Option<String>,
 }
 
 impl AudioInput {
@@ -16,16 +24,70 @@ impl AudioInput {
             stream: None,
             sample_buffer: Arc::new(Mutex::new(Vec::new())),
             sample_rate: 44100,
+            current_device_name: None,
         })
+    }
+
+    /// List available audio input devices
+    pub fn list_devices() -> Result<Vec<AudioDeviceInfo>> {
+        let host = cpal::default_host();
+        
+        let default_device = host.default_input_device();
+        let default_name = default_device.as_ref().and_then(|d| d.name().ok());
+        
+        let devices = host
+            .input_devices()
+            .map_err(|e| VibeVJError::AudioError(format!("Failed to enumerate devices: {}", e)))?;
+        
+        let mut device_list = Vec::new();
+        for device in devices {
+            if let Ok(name) = device.name() {
+                let is_default = default_name.as_ref().map(|dn| dn == &name).unwrap_or(false);
+                device_list.push(AudioDeviceInfo {
+                    name,
+                    is_default,
+                });
+            }
+        }
+        
+        Ok(device_list)
     }
 
     /// Start capturing audio from the default input device
     pub fn start(&mut self) -> Result<()> {
+        self.start_with_device(None)
+    }
+
+    /// Start capturing audio from a specific device by name
+    pub fn start_with_device(&mut self, device_name: Option<&str>) -> Result<()> {
         let host = cpal::default_host();
         
-        let device = host
-            .default_input_device()
-            .ok_or_else(|| VibeVJError::AudioError("No input device available".to_string()))?;
+        let device = if let Some(name) = device_name {
+            // Find device by name
+            let devices = host
+                .input_devices()
+                .map_err(|e| VibeVJError::AudioError(format!("Failed to enumerate devices: {}", e)))?;
+            
+            devices
+                .filter_map(|d| {
+                    d.name().ok().and_then(|n| {
+                        if n == name {
+                            Some(d)
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .next()
+                .ok_or_else(|| VibeVJError::AudioError(format!("Device '{}' not found", name)))?
+        } else {
+            // Use default device
+            host.default_input_device()
+                .ok_or_else(|| VibeVJError::AudioError("No input device available".to_string()))?
+        };
+        
+        // Store the device name
+        self.current_device_name = device.name().ok();
 
         let config = device
             .default_input_config()
@@ -92,6 +154,11 @@ impl AudioInput {
         self.sample_rate
     }
 
+    /// Get current device name
+    pub fn current_device_name(&self) -> Option<&str> {
+        self.current_device_name.as_deref()
+    }
+
     /// Stop the audio stream
     pub fn stop(&mut self) {
         self.stream = None;
@@ -104,6 +171,7 @@ impl Default for AudioInput {
             stream: None,
             sample_buffer: Arc::new(Mutex::new(Vec::new())),
             sample_rate: 44100,
+            current_device_name: None,
         })
     }
 }

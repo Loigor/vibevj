@@ -15,6 +15,7 @@ use vibevj_scene::{Scene, SceneRenderer};
 use vibevj_scripting::ScriptEngine;
 use glam::{Mat4, Vec3};
 use crate::preview_window::PreviewWindow;
+use crate::scene_state::SceneState;
 
 /// Main VibeVJ application
 pub struct VibeVJApp {
@@ -26,12 +27,11 @@ pub struct VibeVJApp {
     
     // 3D rendering
     scene_renderer: Option<SceneRenderer>,
-    render_objects: Vec<RenderObject>,
+    scene_state: SceneState,
     render_target: Option<RenderTarget>,
     
     // Preview window
     preview_window: Option<PreviewWindow>,
-    preview_render_target: Option<RenderTarget>,
     show_preview_window: bool,
     
     // Application state
@@ -39,6 +39,7 @@ pub struct VibeVJApp {
     audio_input: AudioInput,
     audio_analyzer: AudioAnalyzer,
     script_engine: ScriptEngine,
+    selected_audio_device: Option<String>,
     
     // Time tracking
     start_time: Instant,
@@ -66,17 +67,17 @@ impl VibeVJApp {
             wgpu_instance,
             
             scene_renderer: None,
-            render_objects: Vec::new(),
+            scene_state: SceneState::new(),
             render_target: None,
             
             preview_window: None,
-            preview_render_target: None,
             show_preview_window: false,
             
             scene: Scene::new("Main Scene".to_string()),
             audio_input: AudioInput::default(),
             audio_analyzer: AudioAnalyzer::default(),
             script_engine: ScriptEngine::new(),
+            selected_audio_device: None,
             
             start_time: Instant::now(),
             last_frame_time: Instant::now(),
@@ -84,6 +85,28 @@ impl VibeVJApp {
             
             frequency_bands: FrequencyBands::default(),
         })
+    }
+    
+    /// Get list of available audio devices
+    pub fn list_audio_devices(&self) -> Vec<vibevj_audio::AudioDeviceInfo> {
+        AudioInput::list_devices().unwrap_or_default()
+    }
+    
+    /// Get currently selected audio device
+    pub fn selected_audio_device(&self) -> Option<&str> {
+        self.selected_audio_device.as_deref()
+    }
+    
+    /// Select and start audio device
+    pub fn select_audio_device(&mut self, device_name: Option<String>) -> Result<()> {
+        self.audio_input.stop();
+        self.selected_audio_device = device_name.clone();
+        
+        if let Err(e) = self.audio_input.start_with_device(device_name.as_deref()) {
+            log::warn!("Failed to start audio input: {}", e);
+        }
+        
+        Ok(())
     }
 
     /// Initialize the application after window creation
@@ -160,7 +183,8 @@ impl VibeVJApp {
             scene_renderer.model_bind_group_layout(),
         );
         
-        self.render_objects = vec![cube, sphere];
+        // Initialize scene state with render objects
+        self.scene_state.render_objects = vec![cube, sphere];
         self.scene_renderer = Some(scene_renderer);
         
         // Register render target texture with egui
@@ -209,7 +233,36 @@ impl VibeVJApp {
         }
 
         // Update GUI
+        let mut audio_device_to_select: Option<String> = None;
+        
+        // Check if we need to populate audio devices
+        let needs_audio_devices = self.gui.as_ref().map(|g| !g.has_audio_devices()).unwrap_or(false);
+        let audio_device_list = if needs_audio_devices {
+            let devices = self.list_audio_devices();
+            let device_names: Vec<String> = devices.iter().map(|d| {
+                if d.is_default {
+                    format!("{} (Default)", d.name)
+                } else {
+                    d.name.clone()
+                }
+            }).collect();
+            Some((device_names, self.audio_input.current_device_name().map(|s| s.to_string())))
+        } else {
+            None
+        };
+        
         if let Some(gui) = &mut self.gui {
+            // Update audio device list in GUI if not populated
+            if let Some((device_names, selected)) = audio_device_list {
+                gui.set_audio_devices(device_names, selected.as_deref());
+            }
+            
+            // Check for audio device changes
+            if let Some(device_name) = gui.take_audio_device_change() {
+                // Extract actual device name (remove " (Default)" suffix if present)
+                audio_device_to_select = Some(device_name.replace(" (Default)", ""));
+            }
+            
             gui.update(&time_info);
             
             // Check if preview window toggle state has changed
@@ -226,7 +279,18 @@ impl VibeVJApp {
             }
         }
         
+        // Handle audio device selection outside of GUI borrow
+        if let Some(device_name) = audio_device_to_select {
+            log::info!("Switching audio device to: {}", device_name);
+            if let Err(e) = self.select_audio_device(Some(device_name)) {
+                log::error!("Failed to switch audio device: {}", e);
+            }
+        }
+        
         // Preview window texture will be updated in render() method
+        
+        // Update scene state
+        self.scene_state.update(elapsed as f32);
         
         // Update 3D objects - rotate them
         if let Some(renderer) = &self.renderer {
@@ -234,18 +298,18 @@ impl VibeVJApp {
             let angle = elapsed as f32 * rotation_speed;
             
             // Rotate cube around Y axis
-            if !self.render_objects.is_empty() {
+            if !self.scene_state.render_objects.is_empty() {
                 let transform = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.0))
                     * Mat4::from_rotation_y(angle)
                     * Mat4::from_rotation_x(angle * 0.5);
-                self.render_objects[0].update_transform(&renderer.queue, transform);
+                self.scene_state.render_objects[0].update_transform(&renderer.queue, transform);
             }
             
             // Rotate sphere around its own axis
-            if self.render_objects.len() > 1 {
+            if self.scene_state.render_objects.len() > 1 {
                 let transform = Mat4::from_translation(Vec3::new(-2.5, 0.0, 0.0))
                     * Mat4::from_rotation_z(angle * 1.5);
-                self.render_objects[1].update_transform(&renderer.queue, transform);
+                self.scene_state.render_objects[1].update_transform(&renderer.queue, transform);
             }
         }
 
@@ -255,13 +319,29 @@ impl VibeVJApp {
 
     /// Render a frame
     fn render(&mut self) -> Result<()> {
-        let renderer = self.renderer.as_ref().unwrap();
+        let renderer = self.renderer.as_mut().unwrap();
         let gui = self.gui.as_mut().unwrap();
         let egui_state = self.egui_state.as_mut().unwrap();
         let window = self.window.as_ref().unwrap();
 
-        // Get surface texture
-        let output = renderer.get_current_texture()?;
+        // Get surface texture, handling surface changes
+        let output = match renderer.get_current_texture() {
+            Ok(texture) => texture,
+            Err(e) => {
+                // Surface has changed, need to reconfigure
+                if e.to_string().contains("surface has changed") || 
+                   e.to_string().contains("swap chain must be updated") ||
+                   e.to_string().contains("Timeout") {
+                    log::info!("Surface changed, reconfiguring...");
+                    let size = window.inner_size();
+                    renderer.resize(size);
+                    // Try again after reconfiguration
+                    renderer.get_current_texture()?
+                } else {
+                    return Err(e.into());
+                }
+            }
+        };
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         // Begin egui frame
@@ -312,7 +392,7 @@ impl VibeVJApp {
             scene_renderer.update_camera(&renderer.queue);
             
             // Render 3D objects to render target
-            let object_refs: Vec<&RenderObject> = self.render_objects.iter().collect();
+            let object_refs: Vec<&RenderObject> = self.scene_state.render_objects.iter().collect();
             scene_renderer.render(
                 &mut encoder,
                 &render_target.view,
@@ -327,40 +407,43 @@ impl VibeVJApp {
             );
         }
         
-        // Update preview window's bind group by copying texture from main render target
-        if let (Some(preview_window), Some(render_target)) = (&mut self.preview_window, &self.render_target) {
-            preview_window.set_render_target(render_target, &renderer.device, &renderer.queue);
+        // Update preview window's scene transforms to match main scene
+        // The actual rendering will happen in RedrawRequested event
+        if let Some(preview_window) = &mut self.preview_window {
+            let transforms: Vec<_> = self.scene_state.render_objects.iter().map(|obj| obj.transform).collect();
+            preview_window.update_scene(transforms);
         }
 
         // Render GUI to window
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("GUI Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.1,
-                            b: 0.1,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("GUI Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.1,
+                        g: 0.1,
+                        b: 0.1,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
 
-            // Render egui
-            gui.renderer_mut().render(
-                &mut render_pass,
-                &clipped_primitives,
-                &screen_descriptor,
-            );
-        }
+        // Render egui
+        gui.renderer_mut().render(
+            &mut render_pass,
+            &clipped_primitives,
+            &screen_descriptor,
+        );
+        
+        // Explicitly drop render_pass to release the borrow on encoder
+        drop(render_pass);
 
         // Free egui textures
         for id in &full_output.textures_delta.free {
@@ -406,30 +489,29 @@ impl VibeVJApp {
                     
                     if is_preview_window {
                         // Handle preview window events
-                        if let Some(preview_window) = &self.preview_window {
+                        // First, handle close request which will set preview_window to None
+                        if matches!(event, WindowEvent::CloseRequested) {
+                            self.preview_window = None;
+                            self.show_preview_window = false;
+                            if let Some(gui) = &mut self.gui {
+                                gui.set_show_preview_window(false);
+                            }
+                            log::info!("Preview window closed by user");
+                            return;
+                        }
+                        
+                        // For all other events, only process if preview window still exists
+                        if let Some(preview_window) = &mut self.preview_window {
                             // Handle input (fullscreen toggle)
                             preview_window.handle_input(&event);
                             
                             match event {
-                                WindowEvent::CloseRequested => {
-                                    // Close preview window but keep main app running
-                                    self.preview_window = None;
-                                    self.show_preview_window = false;
-                                    if let Some(gui) = &mut self.gui {
-                                        gui.set_show_preview_window(false);
-                                    }
-                                    log::info!("Preview window closed by user");
-                                }
                                 WindowEvent::Resized(physical_size) => {
-                                    if let Some(pw) = &mut self.preview_window {
-                                        pw.resize(physical_size);
-                                    }
+                                    preview_window.resize(physical_size);
                                 }
                                 WindowEvent::RedrawRequested => {
-                                    if let Some(pw) = &self.preview_window {
-                                        if let Err(e) = pw.render() {
-                                            log::error!("Preview window render error: {}", e);
-                                        }
+                                    if let Err(e) = preview_window.render() {
+                                        log::error!("Preview window render error: {}", e);
                                     }
                                 }
                                 _ => {}
@@ -483,7 +565,13 @@ impl VibeVJApp {
                         let instance = &self.wgpu_instance;
                         pollster::block_on(async {
                             match PreviewWindow::new(elwt, &renderer.device, instance).await {
-                                Ok(pw) => {
+                                Ok(mut pw) => {
+                                    // Initialize preview window with scene objects
+                                    let mesh_material_data: Vec<_> = self.scene_state.render_objects.iter().map(|obj| {
+                                        (obj.mesh.clone(), obj.material.clone(), obj.transform)
+                                    }).collect();
+                                    pw.init_scene_objects(mesh_material_data);
+                                    
                                     log::info!("Preview window created successfully");
                                     self.preview_window = Some(pw);
                                 }

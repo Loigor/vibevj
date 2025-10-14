@@ -8,7 +8,7 @@ use crate::scene_editor::SceneEditor;
 pub enum PanelContent {
     Preview,
     SceneEditor,
-    TimelineEditor,
+    Sequencer,
 }
 
 /// Left panel - Main render preview and controls
@@ -117,7 +117,7 @@ impl Default for LeftPanel {
     }
 }
 
-/// Center panel - Main view (preview, scene editor, or timeline)
+/// Center panel - Main view (preview, scene editor, or sequencer)
 pub struct CenterPanel {
     current_content: PanelContent,
     scene_editor: SceneEditor,
@@ -152,7 +152,7 @@ impl CenterPanel {
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.current_content, PanelContent::Preview, "📺 Preview");
             ui.selectable_value(&mut self.current_content, PanelContent::SceneEditor, "🎨 Scene Editor");
-            ui.selectable_value(&mut self.current_content, PanelContent::TimelineEditor, "⏱ Timeline");
+            ui.selectable_value(&mut self.current_content, PanelContent::Sequencer, "⏱ Sequencer");
         });
 
         ui.separator();
@@ -161,7 +161,7 @@ impl CenterPanel {
         match self.current_content {
             PanelContent::Preview => self.render_preview(ui),
             PanelContent::SceneEditor => self.render_scene_editor(ui),
-            PanelContent::TimelineEditor => self.render_timeline(ui),
+            PanelContent::Sequencer => self.render_sequencer(ui),
         }
     }
 
@@ -193,22 +193,22 @@ impl CenterPanel {
         self.scene_editor.ui(ui);
     }
 
-    fn render_timeline(&self, ui: &mut Ui) {
-        ui.heading("Timeline Editor");
+    fn render_sequencer(&self, ui: &mut Ui) {
+        ui.heading("Scene Sequencer");
         
         ui.group(|ui| {
             ui.set_min_height(100.0);
-            ui.label("⏱ Timeline Track 1");
+            ui.label("⏱ Sequence Track 1");
         });
         
         ui.group(|ui| {
             ui.set_min_height(100.0);
-            ui.label("⏱ Timeline Track 2");
+            ui.label("⏱ Sequence Track 2");
         });
         
         ui.group(|ui| {
             ui.set_min_height(100.0);
-            ui.label("⏱ Timeline Track 3");
+            ui.label("⏱ Sequence Track 3");
         });
     }
 }

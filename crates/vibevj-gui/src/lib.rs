@@ -3,7 +3,7 @@
 /// Provides the graphical user interface with:
 /// - Three-panel layout (left: 25%, center: 60%, right: 15%)
 /// - Scene editor
-/// - Timeline editor
+/// - Scene sequencer
 /// - Prefab and resource browser
 /// - Node-based visual programming interface
 

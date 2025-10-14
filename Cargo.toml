@@ -38,6 +38,7 @@ log = { workspace = true }
 env_logger = { workspace = true }
 anyhow = { workspace = true }
 glam = { workspace = true }
+bytemuck = { workspace = true }
 
 [workspace.package]
 version = "0.1.0"
@@ -47,14 +48,14 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/vibevj/vibevj"
 
 [workspace.dependencies]
-# Core dependencies
-wgpu = "0.19"
-egui = "0.27"
-egui-wgpu = "0.27"
-egui-winit = "0.27"
+# Core dependencies  
+wgpu = "0.20"
+egui = "0.28"
+egui-wgpu = "0.28"
+egui-winit = "0.28"
 winit = "0.29"
 pollster = "0.3"
-bytemuck = { version = "1.14", features = ["derive"] }
+bytemuck = { version = "1.19", features = ["derive"] }
 
 # Math and utilities
 glam = { version = "0.27", features = ["serde"] }

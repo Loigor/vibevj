@@ -2,7 +2,7 @@
 /// 
 /// This module will contain custom egui widgets for:
 /// - Node editor
-/// - Timeline tracks
+/// - Scene sequencer tracks
 /// - Waveform display
 /// - Frequency spectrum analyzer
 /// - Color pickers
@@ -31,22 +31,22 @@ impl Default for NodeEditor {
     }
 }
 
-/// Placeholder for timeline widget
-pub struct Timeline {
-    // Will be implemented with timeline functionality
+/// Placeholder for scene sequencer widget
+pub struct Sequencer {
+    // Will be implemented with sequencer functionality
 }
 
-impl Timeline {
+impl Sequencer {
     pub fn new() -> Self {
         Self {}
     }
 
     pub fn ui(&mut self, ui: &mut Ui) {
-        ui.label("Timeline Widget (TODO)");
+        ui.label("Scene Sequencer Widget (TODO)");
     }
 }
 
-impl Default for Timeline {
+impl Default for Sequencer {
     fn default() -> Self {
         Self::new()
     }

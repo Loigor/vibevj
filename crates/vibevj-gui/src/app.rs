@@ -12,6 +12,9 @@ pub struct GuiApp {
     right_panel: RightPanel,
     render_texture_id: Option<egui::TextureId>,
     show_preview_window: bool,
+    audio_devices: Vec<String>,
+    selected_audio_device_index: usize,
+    audio_device_changed: bool,
 }
 
 impl GuiApp {
@@ -38,6 +41,34 @@ impl GuiApp {
             right_panel: RightPanel::new(),
             render_texture_id: None,
             show_preview_window: false,
+            audio_devices: Vec::new(),
+            selected_audio_device_index: 0,
+            audio_device_changed: false,
+        }
+    }
+    
+    /// Set the list of available audio devices
+    pub fn set_audio_devices(&mut self, devices: Vec<String>, selected: Option<&str>) {
+        self.audio_devices = devices;
+        if let Some(sel) = selected {
+            if let Some(idx) = self.audio_devices.iter().position(|d| d == sel) {
+                self.selected_audio_device_index = idx;
+            }
+        }
+    }
+    
+    /// Check if audio devices have been loaded
+    pub fn has_audio_devices(&self) -> bool {
+        !self.audio_devices.is_empty()
+    }
+    
+    /// Check if audio device selection has changed and return the new selection
+    pub fn take_audio_device_change(&mut self) -> Option<String> {
+        if self.audio_device_changed {
+            self.audio_device_changed = false;
+            self.audio_devices.get(self.selected_audio_device_index).cloned()
+        } else {
+            None
         }
     }
     
@@ -94,7 +125,7 @@ impl GuiApp {
                 self.center_panel.set_render_texture(Some(texture_id));
                 self.left_panel.set_render_texture(None);
             } else {
-                // Show render in left panel when Scene Editor or Timeline is selected
+                // Show render in left panel when Scene Editor or Sequencer is selected
                 self.left_panel.set_render_texture(Some(texture_id));
                 self.center_panel.set_render_texture(None);
             }
@@ -142,6 +173,24 @@ impl GuiApp {
                         // TODO: Implement preferences
                         ui.close_menu();
                     }
+                });
+
+                // Audio menu
+                ui.menu_button("Audio", |ui| {
+                    ui.menu_button("Audio Interface", |ui| {
+                        if self.audio_devices.is_empty() {
+                            ui.label("No audio devices found");
+                        } else {
+                            for (idx, device) in self.audio_devices.iter().enumerate() {
+                                let is_selected = idx == self.selected_audio_device_index;
+                                if ui.selectable_label(is_selected, device).clicked() {
+                                    self.selected_audio_device_index = idx;
+                                    self.audio_device_changed = true;
+                                    ui.close_menu();
+                                }
+                            }
+                        }
+                    });
                 });
                 
                 // Window menu

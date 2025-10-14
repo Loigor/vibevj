@@ -102,6 +102,7 @@ impl PipelineBuilder {
                 module: &vertex_shader,
                 entry_point: "vs_main",
                 buffers: &self.vertex_buffers,
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &fragment_shader,
@@ -111,6 +112,7 @@ impl PipelineBuilder {
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: self.topology,

@@ -4,7 +4,8 @@ use winit::window::{Window, WindowBuilder, Fullscreen};
 use winit::event_loop::EventLoopWindowTarget;
 use winit::event::{WindowEvent, KeyEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
-use vibevj_engine::RenderTarget;
+use vibevj_engine::{RenderTarget, RenderObject, ModelUniform};
+use vibevj_scene::SceneRenderer;
 
 /// Manages a separate preview window for displaying the rendered scene
 pub struct PreviewWindow {
@@ -15,9 +16,18 @@ pub struct PreviewWindow {
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
     pub enabled: bool,
+    is_ready: bool, // Track if window is ready to render
+    
+    // Scene rendering on preview device
+    scene_renderer: SceneRenderer,
+    render_target: RenderTarget,
+    render_objects: Vec<RenderObject>,
+    pending_transforms: Vec<glam::Mat4>,
+    
+    // Blit pipeline to copy render target to surface
     blit_pipeline: wgpu::RenderPipeline,
     blit_bind_group_layout: wgpu::BindGroupLayout,
-    blit_bind_group: Option<wgpu::BindGroup>,
+    blit_bind_group: wgpu::BindGroup,
     sampler: wgpu::Sampler,
 }
 
@@ -86,6 +96,23 @@ impl PreviewWindow {
         
         surface.configure(&device, &config);
         
+        // Create scene renderer for preview window
+        let camera = vibevj_engine::Camera::new(
+            glam::Vec3::new(3.0, 2.0, 5.0),
+            glam::Vec3::ZERO,
+            size.width as f32 / size.height as f32,
+        );
+        let scene_renderer = SceneRenderer::new(&device, surface_format, camera);
+        
+        // Create render target for 3D scene
+        let render_target = RenderTarget::new(
+            &device,
+            size.width.max(1),
+            size.height.max(1),
+            surface_format,
+            Some("Preview Window Render Target"),
+        );
+        
         // Create sampler for texture sampling
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Preview Blit Sampler"),
@@ -143,6 +170,7 @@ impl PreviewWindow {
                 module: &blit_shader,
                 entry_point: "vs_main",
                 buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &blit_shader,
@@ -152,6 +180,7 @@ impl PreviewWindow {
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -171,6 +200,22 @@ impl PreviewWindow {
             multiview: None,
         });
 
+        // Create initial bind group for blitting
+        let blit_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Preview Blit Bind Group"),
+            layout: &blit_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&render_target.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+
         Ok(Self {
             window,
             surface,
@@ -179,112 +224,121 @@ impl PreviewWindow {
             config,
             size,
             enabled: true,
+            is_ready: false, // Will be set to true after scene objects are initialized
+            scene_renderer,
+            render_target,
+            render_objects: Vec::new(),
+            pending_transforms: Vec::new(),
             blit_pipeline,
             blit_bind_group_layout,
-            blit_bind_group: None,
+            blit_bind_group,
             sampler,
         })
     }
 
-    /// Update the bind group to render the given render target  
-    /// Note: This creates a texture on the preview device and copies data from the main render target
-    pub fn set_render_target(&mut self, render_target: &RenderTarget, main_device: &wgpu::Device, main_queue: &wgpu::Queue) {
-        // Copy the render target texture to a buffer on the main device
-        let (buffer, padded_bytes_per_row, unpadded_bytes_per_row) = 
-            render_target.copy_to_buffer(main_device, main_queue);
-        
-        let width = render_target.width;
-        let height = render_target.height;
-        
-        // Create or get texture on preview device
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Preview Texture"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: render_target.format, // Use exact same format!
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        
-        // Map the buffer and copy to preview window texture
-        let buffer_slice = buffer.slice(..);
-        buffer_slice.map_async(wgpu::MapMode::Read, |_| {});
-        main_device.poll(wgpu::Maintain::Wait);
-        
-        {
-            let data = buffer_slice.get_mapped_range();
-            
-            // Unpad if necessary
-            let mut unpadded_data = Vec::with_capacity((width * height * 4) as usize);
-            for row in 0..height {
-                let start = (row * padded_bytes_per_row) as usize;
-                let end = start + unpadded_bytes_per_row as usize;
-                unpadded_data.extend_from_slice(&data[start..end]);
-            }
-            
-            // Upload to preview device texture
-            self.queue.write_texture(
-                wgpu::ImageCopyTexture {
-                    texture: &texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &unpadded_data,
-                wgpu::ImageDataLayout {
-                    offset: 0,
-                    bytes_per_row: Some(4 * width),
-                    rows_per_image: Some(height),
-                },
-                wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
+    /// Initialize scene objects on the preview window's device
+    /// This creates new render objects from the same mesh/material data
+    /// and uploads them to the preview device's GPU
+    pub fn init_scene_objects(&mut self, mesh_material_data: Vec<(vibevj_engine::Mesh, vibevj_engine::Material, glam::Mat4)>) {
+        self.render_objects = mesh_material_data.into_iter().map(|(mesh, material, transform)| {
+            let mut obj = RenderObject::new(mesh, material, transform);
+            obj.upload(
+                &self.device,
+                self.scene_renderer.material_bind_group_layout(),
+                self.scene_renderer.model_bind_group_layout(),
             );
-        }
-        
-        buffer.unmap();
-        
-        // Create bind group with the new texture view
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Preview Blit Bind Group"),
-            layout: &self.blit_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
-        self.blit_bind_group = Some(bind_group);
+            obj
+        }).collect();
+        self.is_ready = true; // Mark as ready after scene objects are initialized
+    }
+
+    /// Update transforms of render objects to match the main scene
+    /// Stores transforms to be applied during next render call
+    pub fn update_scene(&mut self, transforms: Vec<glam::Mat4>) {
+        self.pending_transforms = transforms;
     }
     
-    /// Render the render target texture to this window
-    pub fn render(&self) -> Result<()> {
-        // Get the window's surface texture
-        let output = self.surface
-            .get_current_texture()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire surface texture: {}", e))?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        // Create encoder
+    /// Render the 3D scene and blit to window surface in a single pass
+    /// This eliminates CPU copying by rendering the scene independently
+    pub fn render(&mut self) -> Result<()> {
+        // Skip rendering if window is not ready yet
+        if !self.is_ready {
+            return Ok(());
+        }
+        
+        // Skip if no render objects
+        if self.render_objects.is_empty() {
+            return Ok(());
+        }
+        
+        // Poll device to ensure it's ready
+        self.device.poll(wgpu::Maintain::Poll);
+        
+        // Apply pending transform updates (only if we have pending transforms)
+        if !self.pending_transforms.is_empty() {
+            for (i, transform) in self.pending_transforms.iter().enumerate() {
+                if i < self.render_objects.len() {
+                    self.render_objects[i].transform = *transform;
+                    
+                    // Update GPU buffer directly (instead of calling update_transform which might have issues)
+                    if let Some(ref model_buffer) = self.render_objects[i].model_buffer {
+                        let model_uniform = ModelUniform {
+                            model: transform.to_cols_array_2d(),
+                        };
+                        self.queue.write_buffer(model_buffer, 0, bytemuck::cast_slice(&[model_uniform]));
+                    }
+                }
+            }
+        }
+        
+        // Create command encoder for both scene and blit
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Preview Window Render Encoder"),
         });
+        
+        // Update camera
+        self.scene_renderer.update_camera(&self.queue);
+        
+        // Render 3D scene to render target
+        let object_refs: Vec<&RenderObject> = self.render_objects.iter().collect();
+        self.scene_renderer.render(
+            &mut encoder,
+            &self.render_target.view,
+            &self.render_target.depth_view,
+            &object_refs,
+            wgpu::Color {
+                r: 0.1,
+                g: 0.1,
+                b: 0.1,
+                a: 1.0,
+            },
+        );
+        
+        // Get the window's surface texture, handling surface changes
+        let output = match self.surface.get_current_texture() {
+            Ok(texture) => texture,
+            Err(e) => {
+                // Surface has changed, need to reconfigure
+                let err_str = e.to_string();
+                if err_str.contains("surface has changed") || 
+                   err_str.contains("swap chain must be updated") ||
+                   err_str.contains("Timeout") ||
+                   err_str.contains("outdated") {
+                    log::info!("Preview window surface changed, reconfiguring...");
+                    let size = self.window.inner_size();
+                    self.resize(size);
+                    // Try again after reconfiguration
+                    self.surface
+                        .get_current_texture()
+                        .map_err(|e| anyhow::anyhow!("Failed to acquire surface texture after reconfigure: {}", e))?
+                } else {
+                    return Err(anyhow::anyhow!("Failed to acquire surface texture: {}", e));
+                }
+            }
+        };
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        // Blit the copied texture to the window surface
+        // Blit the render target to the window surface
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Preview Window Render Pass"),
@@ -306,12 +360,10 @@ impl PreviewWindow {
                 occlusion_query_set: None,
             });
             
-            // If we have a texture to blit, draw it
-            if let Some(bind_group) = &self.blit_bind_group {
-                render_pass.set_pipeline(&self.blit_pipeline);
-                render_pass.set_bind_group(0, bind_group, &[]);
-                render_pass.draw(0..3, 0..1); // Draw fullscreen triangle
-            }
+            // Blit the render target to the surface
+            render_pass.set_pipeline(&self.blit_pipeline);
+            render_pass.set_bind_group(0, &self.blit_bind_group, &[]);
+            render_pass.draw(0..3, 0..1); // Draw fullscreen triangle
         }
 
         self.queue.submit(Some(encoder.finish()));

@@ -29,9 +29,9 @@ A modular Rust workspace with 6 crates:
 **GUI System (`vibevj-gui`)**
 - Three-panel layout (25% left, 60% center, 15% right)
 - Left Panel: Render preview, playback controls, stats, scene settings
-- Center Panel: Switchable between Preview, Scene Editor, Timeline
+- Center Panel: Switchable between Preview, Scene Editor, Sequencer
 - Right Panel: Resource browser for prefabs, shaders, textures, media
-- Custom widget system (node editor, timeline - placeholders)
+- Custom widget system (node editor, sequencer - placeholders)
 
 **Audio Analysis (`vibevj-audio`)**
 - Real-time audio input capture using cpal
@@ -124,7 +124,7 @@ cargo check --workspace
 
 #### Medium Term (Phase 3-4)
 1. Build node graph editor
-2. Implement timeline
+2. Implement scene sequencer
 3. Add scene save/load
 4. Create example templates
 
@@ -164,8 +164,8 @@ Common ←─┘
 
 ### Technology Stack
 
-- **Graphics**: wgpu 0.19 (Vulkan/DX12/Metal)
-- **GUI**: egui 0.27 (immediate mode)
+- **Graphics**: wgpu 0.20 (Vulkan/DX12/Metal)
+- **GUI**: egui 0.28 (immediate mode)
 - **Windowing**: winit 0.29
 - **Audio**: cpal 0.15, rustfft 6.1
 - **Math**: glam 0.27, nalgebra 0.32
@@ -188,7 +188,7 @@ Common ←─┘
 2. Audio input might fail on systems without Stereo Mix
 3. No actual rendering yet - just clear color
 4. Node graph editor is placeholder
-5. Timeline is placeholder
+5. Scene Sequencer is placeholder
 6. No 2D rendering yet
 7. No video/image loading yet
 

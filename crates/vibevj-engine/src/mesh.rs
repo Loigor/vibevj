@@ -63,6 +63,19 @@ pub struct Mesh {
     pub index_buffer: Option<wgpu::Buffer>,
 }
 
+impl Clone for Mesh {
+    fn clone(&self) -> Self {
+        // Clone only the vertex and index data, not the GPU buffers
+        // The new mesh will need to be uploaded to GPU separately
+        Self {
+            vertices: self.vertices.clone(),
+            indices: self.indices.clone(),
+            vertex_buffer: None,
+            index_buffer: None,
+        }
+    }
+}
+
 impl Mesh {
     pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
         Self {

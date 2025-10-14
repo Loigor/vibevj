@@ -19,7 +19,7 @@ VibeVJ is a modern VJ application built in Rust that combines a GPU-accelerated 
 - 🎬 **Scene Management**: Hierarchical scene graph with component system
 
 ### Planned Features
-- Timeline editor for animations
+- Scene sequencer for animations and transitions
 - 2D visualization support (images, videos, GIFs)
 - Advanced shader effects
 - Beat detection and audio reactivity
@@ -92,7 +92,7 @@ RUST_LOG=info cargo run
 VibeVJ features a three-panel layout:
 
 - **Left Panel (25%)**: Main render preview and playback controls
-- **Center Panel (60%)**: Switchable between Preview, Scene Editor, and Timeline
+- **Center Panel (60%)**: Switchable between Preview, Scene Editor, and Sequencer
 - **Right Panel (15%)**: Resource browser for prefabs, shaders, and media
 
 ### Creating a Scene

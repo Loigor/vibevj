@@ -77,8 +77,8 @@ VibeVJ is a Visual Jockey (VJ) application for creating and running real-time vi
 
 ---
 
-### Phase 4: Scene Management & Timeline
-**Target**: Multi-scene and timeline-based animations
+### Phase 4: Scene Management & Sequencer
+**Target**: Multi-scene and sequencer-based animations
 
 #### Scene System
 - [ ] Scene save/load (JSON format)
@@ -87,8 +87,8 @@ VibeVJ is a Visual Jockey (VJ) application for creating and running real-time vi
 - [ ] Scene transitions and crossfading
 - [ ] Scene hotkeys and quick switching
 
-#### Timeline Editor
-- [ ] Timeline track visualization
+#### Scene Sequencer
+- [ ] Sequence track visualization
 - [ ] Keyframe editing
 - [ ] Animation curves
 - [ ] Track types:
@@ -97,7 +97,7 @@ VibeVJ is a Visual Jockey (VJ) application for creating and running real-time vi
   - [ ] Shader parameter tracks
   - [ ] Audio trigger tracks
 - [ ] Playback controls
-- [ ] Timeline scrubbing
+- [ ] Sequence scrubbing
 - [ ] Loop regions
 
 ---
@@ -196,8 +196,8 @@ VibeVJ is a Visual Jockey (VJ) application for creating and running real-time vi
 - Can create simple scenes with nodes
 - Scene save/load working
 
-### Milestone 3: Timeline Beta (2-3 months)
-- Timeline editor functional
+### Milestone 3: Sequencer Beta (2-3 months)
+- Scene sequencer functional
 - Keyframe animation working
 - Multiple scenes with transitions
 - 2D image/video support
