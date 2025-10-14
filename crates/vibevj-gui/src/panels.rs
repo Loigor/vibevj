@@ -1,5 +1,6 @@
 use egui::Ui;
 use vibevj_common::TimeInfo;
+use vibevj_engine::texture;
 use crate::scene_editor::SceneEditor;
 
 /// Content types for the center panel
@@ -14,6 +15,7 @@ pub enum PanelContent {
 pub struct LeftPanel {
     fps: f32,
     show_stats: bool,
+    render_texture: Option<egui::TextureId>,
 }
 
 impl LeftPanel {
@@ -21,6 +23,7 @@ impl LeftPanel {
         Self {
             fps: 0.0,
             show_stats: true,
+            render_texture: None,
         }
     }
 
@@ -29,17 +32,43 @@ impl LeftPanel {
             self.fps = 1.0 / time.delta;
         }
     }
+    
+    /// Set the render texture to display in preview
+    pub fn set_render_texture(&mut self, texture_id: Option<egui::TextureId>) {
+        self.render_texture = texture_id;
+    }
 
-    pub fn ui(&mut self, ui: &mut Ui) {
+    pub fn render_preview(&self, ui: &mut Ui, texture_id: egui::TextureId) {
         ui.heading("Render Preview");
         ui.separator();
-
         // Preview area
-        ui.group(|ui| {
-            ui.set_min_height(300.0);
-            ui.label("🎬 Main Render Preview");
-            ui.label("(Viewport will be integrated here)");
+        egui::ScrollArea::both().show(ui, |ui| {
+            if let Some(texture_id) = self.render_texture {
+                // Display the 3D render texture
+                let available_size = ui.available_size();
+                let aspect_ratio = 1280.0 / 720.0; // Match render target aspect
+                let height = available_size.x / aspect_ratio;
+                let size = egui::vec2(available_size.x, height.min(available_size.y));
+                
+                ui.image(egui::load::SizedTexture::new(texture_id, size));
+            } else {
+                // Fallback if no texture
+                ui.group(|ui| {
+                    ui.set_min_height(300.0);
+                    ui.centered_and_justified(|ui| {
+                        ui.label("🎬 Waiting for render...");
+                    });
+                });
+            }
         });
+    }
+
+    pub fn ui(&mut self, ui: &mut Ui) {
+
+        if let Some(texture_id) = self.render_texture {
+            self.render_preview(ui, texture_id);
+        }
+        
 
         ui.separator();
 
@@ -111,6 +140,11 @@ impl CenterPanel {
     /// Set the render texture to display in preview
     pub fn set_render_texture(&mut self, texture_id: Option<egui::TextureId>) {
         self.render_texture = texture_id;
+    }
+    
+    /// Get the current content type
+    pub fn current_content(&self) -> PanelContent {
+        self.current_content
     }
 
     pub fn ui(&mut self, ui: &mut Ui) {

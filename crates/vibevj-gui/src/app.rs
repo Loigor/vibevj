@@ -1,7 +1,7 @@
 use egui::{Context, ViewportId};
 use egui_wgpu::Renderer as EguiRenderer;
 use vibevj_common::TimeInfo;
-use crate::panels::{LeftPanel, CenterPanel, RightPanel};
+use crate::panels::{LeftPanel, CenterPanel, RightPanel, PanelContent};
 
 /// Main GUI application
 pub struct GuiApp {
@@ -85,9 +85,19 @@ impl GuiApp {
         self.center_panel.update(time);
         self.right_panel.update(time);
         
-        // Update render texture in center panel
+        // Update render texture placement based on current panel content
         if let Some(texture_id) = self.render_texture_id {
-            self.center_panel.set_render_texture(Some(texture_id));
+            let current_content = self.center_panel.current_content();
+            
+            if current_content == PanelContent::Preview {
+                // Show render in center panel when Preview is selected
+                self.center_panel.set_render_texture(Some(texture_id));
+                self.left_panel.set_render_texture(None);
+            } else {
+                // Show render in left panel when Scene Editor or Timeline is selected
+                self.left_panel.set_render_texture(Some(texture_id));
+                self.center_panel.set_render_texture(None);
+            }
         }
     }
 
