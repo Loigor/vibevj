@@ -29,8 +29,7 @@ impl GuiApp {
         let renderer = EguiRenderer::new(
             device,
             surface_format,
-            None,
-            1,
+            egui_wgpu::RendererOptions::default(),
         );
 
         Self {

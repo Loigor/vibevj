@@ -17,7 +17,7 @@ impl Renderer {
         let size = window.inner_size();
 
         // Create WGPU instance
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });
@@ -34,7 +34,7 @@ impl Renderer {
                 force_fallback_adapter: false,
             })
             .await
-            .ok_or_else(|| VibeVJError::RenderError("Failed to find suitable adapter".to_string()))?;
+            .map_err(|e| VibeVJError::RenderError(format!("Failed to find suitable adapter: {}", e)))?;
 
         // Request device and queue
         let (device, queue) = adapter
@@ -43,8 +43,10 @@ impl Renderer {
                     label: Some("VibeVJ Device"),
                     required_features: wgpu::Features::empty(),
                     required_limits: wgpu::Limits::default(),
+                    memory_hints: wgpu::MemoryHints::default(),
+                    experimental_features: wgpu::ExperimentalFeatures::default(),
+                    trace: wgpu::Trace::Off,
                 },
-                None,
             )
             .await
             .map_err(|e| VibeVJError::RenderError(format!("Failed to create device: {}", e)))?;

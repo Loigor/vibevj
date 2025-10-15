@@ -49,11 +49,11 @@ repository = "https://github.com/vibevj/vibevj"
 
 [workspace.dependencies]
 # Core dependencies  
-wgpu = "0.20"
-egui = "0.28"
-egui-wgpu = "0.28"
-egui-winit = "0.28"
-winit = "0.29"
+wgpu = "27.0.1"
+egui = "0.33"
+egui-wgpu = "0.33"
+egui-winit = "0.33"
+winit = "0.30"
 pollster = "0.3"
 bytemuck = { version = "1.19", features = ["derive"] }
 

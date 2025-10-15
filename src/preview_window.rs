@@ -1,7 +1,6 @@
 use anyhow::Result;
 use std::sync::Arc;
-use winit::window::{Window, WindowBuilder, Fullscreen};
-use winit::event_loop::EventLoopWindowTarget;
+use winit::window::{Window, Fullscreen};
 use winit::event::{WindowEvent, KeyEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use vibevj_engine::{RenderTarget, RenderObject, ModelUniform};
@@ -33,17 +32,11 @@ pub struct PreviewWindow {
 
 impl PreviewWindow {
     /// Create a new preview window using the shared device
-    pub async fn new<T>(
-        event_loop: &EventLoopWindowTarget<T>,
+    pub async fn new(
+        window: Arc<Window>,
         device: &wgpu::Device,
         instance: &wgpu::Instance,
     ) -> Result<Self> {
-        let window = Arc::new(
-            WindowBuilder::new()
-                .with_title("VibeVJ - Preview (Press F for fullscreen)")
-                .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
-                .build(event_loop)?
-        );
         
         let size = window.inner_size();
         
@@ -59,18 +52,18 @@ impl PreviewWindow {
                 force_fallback_adapter: false,
             })
             .await
-            .ok_or_else(|| anyhow::anyhow!("Failed to find suitable adapter for preview window"))?;
+            .map_err(|e| anyhow::anyhow!("Failed to find suitable adapter for preview window: {}", e))?;
         
         // Create device for preview window
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("Preview Window Device"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("Preview Window Device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::default(),
+                experimental_features: wgpu::ExperimentalFeatures::default(),
+                trace: wgpu::Trace::Off,
+            })
             .await
             .map_err(|e| anyhow::anyhow!("Failed to create device for preview window: {}", e))?;
         
@@ -168,13 +161,13 @@ impl PreviewWindow {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &blit_shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &blit_shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_format,
                     blend: Some(wgpu::BlendState::REPLACE),
@@ -182,6 +175,7 @@ impl PreviewWindow {
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
+            cache: None,
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
@@ -271,8 +265,7 @@ impl PreviewWindow {
             return Ok(());
         }
         
-        // Poll device to ensure it's ready
-        self.device.poll(wgpu::Maintain::Poll);
+        // Device polling is no longer needed in wgpu 27
         
         // Apply pending transform updates (only if we have pending transforms)
         if !self.pending_transforms.is_empty() {
@@ -280,7 +273,7 @@ impl PreviewWindow {
                 if i < self.render_objects.len() {
                     self.render_objects[i].transform = *transform;
                     
-                    // Update GPU buffer directly (instead of calling update_transform which might have issues)
+                    // Update GPU buffer directly
                     if let Some(ref model_buffer) = self.render_objects[i].model_buffer {
                         let model_uniform = ModelUniform {
                             model: transform.to_cols_array_2d(),
@@ -354,6 +347,7 @@ impl PreviewWindow {
                         }),
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,

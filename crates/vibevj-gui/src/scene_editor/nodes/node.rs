@@ -146,6 +146,7 @@ impl Node {
             rect,
             4.0,
             Stroke::new(2.0, border_color),
+            egui::StrokeKind::Middle,
         );
 
         // Draw title bar
@@ -155,11 +156,11 @@ impl Node {
         );
         ui.painter().rect_filled(
             title_rect,
-            egui::Rounding {
-                nw: 4.0,
-                ne: 4.0,
-                sw: 0.0,
-                se: 0.0,
+            egui::CornerRadius {
+                nw: 4,
+                ne: 4,
+                sw: 0,
+                se: 0,
             },
             Color32::from_rgb(40, 40, 60),
         );
@@ -242,6 +243,7 @@ impl Node {
             rect,
             4.0 * canvas_scale,
             Stroke::new(2.0 * canvas_scale, border_color),
+            egui::StrokeKind::Middle,
         );
 
         // Draw title bar
@@ -251,11 +253,11 @@ impl Node {
         );
         ui.painter().rect_filled(
             title_rect,
-            egui::Rounding {
-                nw: 4.0 * canvas_scale,
-                ne: 4.0 * canvas_scale,
-                sw: 0.0,
-                se: 0.0,
+            egui::CornerRadius {
+                nw: (4.0 * canvas_scale) as u8,
+                ne: (4.0 * canvas_scale) as u8,
+                sw: 0,
+                se: 0,
             },
             Color32::from_rgb(40, 40, 60),
         );

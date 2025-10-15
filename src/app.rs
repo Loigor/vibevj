@@ -1,9 +1,11 @@
 use anyhow::Result;
 use std::sync::Arc;
 use std::time::Instant;
+use std::thread;
+use std::time::Duration;
 use winit::{
     event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
+    event_loop::{ControlFlow, EventLoop, EventLoopProxy},
     window::Window,
 };
 
@@ -16,6 +18,12 @@ use vibevj_scripting::ScriptEngine;
 use glam::{Mat4, Vec3};
 use crate::preview_window::PreviewWindow;
 use crate::scene_state::SceneState;
+
+/// Custom event for animation timer
+#[derive(Debug, Clone, Copy)]
+pub enum AppEvent {
+    AnimationTick,
+}
 
 /// Main VibeVJ application
 pub struct VibeVJApp {
@@ -54,7 +62,7 @@ impl VibeVJApp {
     /// Create a new VibeVJ application
     pub fn new() -> Result<Self> {
         // Create WGPU instance once for the entire application
-        let wgpu_instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        let wgpu_instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });
@@ -125,6 +133,7 @@ impl VibeVJApp {
             &window,
             Some(window.scale_factor() as f32),
             None,
+            None, // max_texture_side
         );
 
         // Run a first frame to initialize font textures
@@ -312,6 +321,12 @@ impl VibeVJApp {
                 self.scene_state.render_objects[1].update_transform(&renderer.queue, transform);
             }
         }
+        
+        // Update preview window's scene transforms to match main scene
+        if let Some(preview_window) = &mut self.preview_window {
+            let transforms: Vec<_> = self.scene_state.render_objects.iter().map(|obj| obj.transform).collect();
+            preview_window.update_scene(transforms);
+        }
 
         self.last_frame_time = now;
         self.frame_count += 1;
@@ -406,44 +421,43 @@ impl VibeVJApp {
                 },
             );
         }
-        
-        // Update preview window's scene transforms to match main scene
-        // The actual rendering will happen in RedrawRequested event
-        if let Some(preview_window) = &mut self.preview_window {
-            let transforms: Vec<_> = self.scene_state.render_objects.iter().map(|obj| obj.transform).collect();
-            preview_window.update_scene(transforms);
-        }
 
         // Render GUI to window
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("GUI Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.1,
-                        g: 0.1,
-                        b: 0.1,
-                        a: 1.0,
-                    }),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("GUI Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.1,
+                            b: 0.1,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
 
-        // Render egui
-        gui.renderer_mut().render(
-            &mut render_pass,
-            &clipped_primitives,
-            &screen_descriptor,
-        );
-        
-        // Explicitly drop render_pass to release the borrow on encoder
-        drop(render_pass);
+            // Render egui (workaround for lifetime issue in egui-wgpu 0.33)
+            // SAFETY: The render_pass is dropped before encoder, so this is safe
+            // This is a workaround for a lifetime issue in egui-wgpu 0.33 where
+            // the render method incorrectly requires 'static lifetime
+            let render_pass_static: &mut wgpu::RenderPass<'static> = unsafe {
+                std::mem::transmute(&mut render_pass)
+            };
+            gui.renderer_mut().render(
+                render_pass_static,
+                &clipped_primitives,
+                &screen_descriptor,
+            );
+        } // render_pass dropped here
 
         // Free egui textures
         for id in &full_output.textures_delta.free {
@@ -458,18 +472,34 @@ impl VibeVJApp {
     }
 
     /// Run the application event loop
-    pub fn run(mut self, event_loop: EventLoop<()>) -> Result<()> {
+    pub fn run(mut self, event_loop: EventLoop<AppEvent>) -> Result<()> {
         event_loop.run(move |event, elwt| {
-            elwt.set_control_flow(ControlFlow::Poll);
+            // Wait for events - animation is driven by timer thread, not by polling
+            elwt.set_control_flow(ControlFlow::Wait);
 
             match event {
+                Event::UserEvent(AppEvent::AnimationTick) => {
+                    // Update scene from animation timer thread
+                    // This runs independently of window events, so animation continues during drag
+                    if self.renderer.is_some() && self.window.is_some() {
+                        self.update();
+                        
+                        // Request redraws after update
+                        if let Some(window) = &self.window {
+                            window.request_redraw();
+                        }
+                        if let Some(preview_window) = &self.preview_window {
+                            preview_window.window.request_redraw();
+                        }
+                    }
+                }
                 Event::Resumed => {
                     if self.window.is_none() {
+                        let window_attributes = winit::window::Window::default_attributes()
+                            .with_title("VibeVJ - Visual Jockey")
+                            .with_inner_size(winit::dpi::LogicalSize::new(1600, 900));
                         let window = Arc::new(
-                            winit::window::WindowBuilder::new()
-                                .with_title("VibeVJ - Visual Jockey")
-                                .with_inner_size(winit::dpi::LogicalSize::new(1600, 900))
-                                .build(elwt)
+                            elwt.create_window(window_attributes)
                                 .expect("Failed to create window")
                         );
                         
@@ -510,9 +540,11 @@ impl VibeVJApp {
                                     preview_window.resize(physical_size);
                                 }
                                 WindowEvent::RedrawRequested => {
+                                    log::debug!("Preview window: RedrawRequested");
                                     if let Err(e) = preview_window.render() {
                                         log::error!("Preview window render error: {}", e);
                                     }
+                                    // Note: Redraw requests now handled by AnimationTick from timer thread
                                 }
                                 _ => {}
                             }
@@ -545,14 +577,11 @@ impl VibeVJApp {
                             }
                         }
                         WindowEvent::RedrawRequested => {
-                            self.update();
+                            log::debug!("Main window: RedrawRequested");
+                            // Note: update() and redraw requests are now handled by AnimationTick from timer thread
                             
                             if let Err(e) = self.render() {
                                 log::error!("Render error: {}", e);
-                            }
-
-                            if let Some(window) = &self.window {
-                                window.request_redraw();
                             }
                         }
                         _ => {}
@@ -563,36 +592,49 @@ impl VibeVJApp {
                     if self.show_preview_window && self.preview_window.is_none() && self.renderer.is_some() {
                         let renderer = self.renderer.as_ref().unwrap();
                         let instance = &self.wgpu_instance;
-                        pollster::block_on(async {
-                            match PreviewWindow::new(elwt, &renderer.device, instance).await {
-                                Ok(mut pw) => {
-                                    // Initialize preview window with scene objects
-                                    let mesh_material_data: Vec<_> = self.scene_state.render_objects.iter().map(|obj| {
-                                        (obj.mesh.clone(), obj.material.clone(), obj.transform)
-                                    }).collect();
-                                    pw.init_scene_objects(mesh_material_data);
-                                    
-                                    log::info!("Preview window created successfully");
-                                    self.preview_window = Some(pw);
-                                }
-                                Err(e) => {
-                                    log::error!("Failed to create preview window: {}", e);
-                                    self.show_preview_window = false;
-                                    if let Some(gui) = &mut self.gui {
-                                        gui.set_show_preview_window(false);
+                        
+                        // Create window for preview
+                        let window_attributes = winit::window::Window::default_attributes()
+                            .with_title("VibeVJ - Preview (Press F for fullscreen)")
+                            .with_inner_size(winit::dpi::LogicalSize::new(1280, 720));
+                        
+                        match elwt.create_window(window_attributes) {
+                            Ok(window) => {
+                                let window = Arc::new(window);
+                                pollster::block_on(async {
+                                    match PreviewWindow::new(window, &renderer.device, instance).await {
+                                        Ok(mut pw) => {
+                                            // Initialize preview window with scene objects
+                                            let mesh_material_data: Vec<_> = self.scene_state.render_objects.iter().map(|obj| {
+                                                (obj.mesh.clone(), obj.material.clone(), obj.transform)
+                                            }).collect();
+                                            pw.init_scene_objects(mesh_material_data);
+                                            
+                                            log::info!("Preview window created successfully");
+                                            self.preview_window = Some(pw);
+                                        }
+                                        Err(e) => {
+                                            log::error!("Failed to create preview window: {}", e);
+                                            self.show_preview_window = false;
+                                            if let Some(gui) = &mut self.gui {
+                                                gui.set_show_preview_window(false);
+                                            }
+                                        }
                                     }
+                                });
+                            }
+                            Err(e) => {
+                                log::error!("Failed to create preview window: {}", e);
+                                self.show_preview_window = false;
+                                if let Some(gui) = &mut self.gui {
+                                    gui.set_show_preview_window(false);
                                 }
                             }
-                        });
+                        }
                     }
                     
-                    // Request redraws
-                    if let Some(window) = &self.window {
-                        window.request_redraw();
-                    }
-                    if let Some(preview_window) = &self.preview_window {
-                        preview_window.window.request_redraw();
-                    }
+                    // Note: Scene update and redraws now happen in AnimationTick event
+                    // from the timer thread, ensuring continuous animation even during window drag
                 }
                 _ => {}
             }
