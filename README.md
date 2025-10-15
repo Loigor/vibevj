@@ -6,7 +6,10 @@ VibeVJ is a modern VJ application built in Rust that combines a GPU-accelerated 
 
 ![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue)
 ![Rust](https://img.shields.io/badge/rust-1.70+-orange)
-![Status](https://img.shields.io/badge/status-alpha-yellow)
+![Status](https://img.shields.io/badge/status-alpha-yellow
+
+> **Disclaimer:**  
+> This project has been programmed with significant assistance from AI agents, primarily Claude Sonnet 4.5. VibeVJ is the third major iteration, developed with enhanced attention to performance and code quality.
 
 ## ✨ Features
 
@@ -65,7 +68,7 @@ vibevj/
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/vibevj.git
+git clone https://github.com/Loigor/vibevj.git
 cd vibevj
 
 # Build the project
@@ -91,9 +94,9 @@ RUST_LOG=info cargo run
 
 VibeVJ features a three-panel layout:
 
-- **Left Panel (25%)**: Main render preview and playback controls
-- **Center Panel (60%)**: Switchable between Preview, Scene Editor, and Sequencer
-- **Right Panel (15%)**: Resource browser for prefabs, shaders, and media
+- **Left Panel**: Main render preview and playback controls
+- **Center Panel**: Switchable between Preview, Scene Editor, and Sequencer
+- **Right Panel**: Resource browser for prefabs, shaders, and media
 
 ### Creating a Scene
 
@@ -237,9 +240,9 @@ VibeVJ is built with amazing open-source technologies:
 
 ## 🔗 Links
 
-- [GitHub Repository](https://github.com/yourusername/vibevj)
-- [Issue Tracker](https://github.com/yourusername/vibevj/issues)
-- [Discussions](https://github.com/yourusername/vibevj/discussions)
+- [GitHub Repository](https://github.com/Loigor/vibevj)
+- [Issue Tracker](https://github.com/Loigor/vibevj/issues)
+- [Discussions](https://github.com/Loigor/vibevj/discussions)
 
 ## 🎯 Project Status
 
